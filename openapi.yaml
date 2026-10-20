@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: Flash Sale API
+  version: 2.0.0
+  description: Authenticated flash-sale API. PostgreSQL transactions and row locks prevent overselling; idempotency keys prevent duplicate orders.
+servers:
+  - url: /api/v1
+tags:
+  - name: Health
+  - name: Authentication
+  - name: Products
+  - name: Orders
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Check API and database
+      responses:
+        '200': { description: Healthy }
+  /auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register a customer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 80 }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 10, maxLength: 72 }
+      responses:
+        '201': { description: Account created and access token returned }
+        '409': { description: Email already registered }
+  /auth/login:
+    post:
+      tags: [Authentication]
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: Access token returned }
+        '401': { description: Invalid credentials }
+  /auth/me:
+    get:
+      tags: [Authentication]
+      security: [{ bearerAuth: [] }]
+      summary: Get current user
+      responses:
+        '200': { description: Current user }
+        '401': { description: Missing or invalid token }
+  /products:
+    get:
+      tags: [Products]
+      summary: Browse products and stock
+      parameters:
+        - { in: query, name: search, schema: { type: string, maxLength: 100 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { in: query, name: offset, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200': { description: Product list }
+  /products/{id}:
+    get:
+      tags: [Products]
+      summary: Product details
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Product details }
+        '404': { description: Product not found }
+  /orders:
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      summary: List only the authenticated user's orders
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+        - { in: query, name: offset, schema: { type: integer, minimum: 0, default: 0 } }
+      responses:
+        '200': { description: Customer's orders }
+        '401': { description: Authentication required }
+    post:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      summary: Place an order safely
+      description: Requires a unique Idempotency-Key for each logical checkout. Reusing it with the same payload replays the original result. A different payload returns 409.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128, example: checkout-2026-0001 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [productId]
+              properties:
+                productId: { type: string, format: uuid }
+                quantity: { type: integer, minimum: 1, maximum: 100, default: 1 }
+      responses:
+        '201': { description: Order created }
+        '400': { description: Validation or missing idempotency key }
+        '401': { description: Authentication required }
+        '404': { description: Product not found }
+        '409': { description: Insufficient stock or idempotency conflict }
+  /orders/{id}:
+    get:
+      tags: [Orders]
+      security: [{ bearerAuth: [] }]
+      summary: Get one of your own orders
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Order details }
+        '404': { description: Order not found or belongs to another user }
+        '401': { description: Authentication required }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

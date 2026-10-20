@@ -1,0 +1,27 @@
+const express = require("express");
+const cors = require("cors");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const swaggerUi = require("swagger-ui-express");
+const fs = require("node:fs");
+const path = require("node:path");
+const YAML = require("yaml");
+const c = require("./config");
+const { requestId, notFound, errorHandler } = require("./middleware");
+const routes = require("./routes");
+const app = express();
+app.disable("x-powered-by");
+app.use(helmet());
+app.use(cors({ origin: c.corsOrigin === "*" ? "*" : c.corsOrigin.split(",").map(x => x.trim()) }));
+app.use(express.json({ limit: "32kb" }));
+app.use(requestId);
+app.use(rateLimit({ windowMs:c.rateWindowMs, limit:c.rateMax, standardHeaders:"draft-7", legacyHeaders:false,
+  message:{ success:false, error:{ code:"RATE_LIMITED", message:"Too many requests. Please try again later." } } }));
+const spec = YAML.parse(fs.readFileSync(path.join(__dirname, "..", "openapi.yaml"), "utf8"));
+spec.servers = [{ url:"/api/v1", description:"Current deployment" }];
+app.get("/", (req,res) => res.json({ success:true, name:"Flash Sale API", docs:"/api-docs", health:"/api/v1/health" }));
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(spec, { explorer:true }));
+app.use("/api/v1", routes);
+app.use(notFound);
+app.use(errorHandler);
+module.exports = app;

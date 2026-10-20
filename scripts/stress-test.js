@@ -1,0 +1,4 @@
+const { randomUUID }=require("node:crypto");
+const base=process.env.BASE_URL||"http://localhost:3000",id=process.env.PRODUCT_ID,n=Number(process.env.CONCURRENCY||50),token=process.env.TOKEN;
+if(!id||!token){console.error("Set PRODUCT_ID and TOKEN (a valid bearer token).");process.exit(1);}
+(async()=>{const results=await Promise.all(Array.from({length:n},async(_,i)=>{const r=await fetch(`${base}/api/v1/orders`,{method:"POST",headers:{"content-type":"application/json","Authorization":`Bearer ${token}`,"Idempotency-Key":`stress-${randomUUID()}-${i}`},body:JSON.stringify({productId:id,quantity:1})});return {status:r.status,body:await r.json()};}));console.log(JSON.stringify({attempts:n,successes:results.filter(x=>x.status===201).length,stockConflicts:results.filter(x=>x.status===409).length,unauthorized:results.filter(x=>x.status===401).length,unexpected:results.filter(x=>![201,409].includes(x.status))},null,2));})();
